@@ -1,0 +1,75 @@
+{% extends "base.html" %}
+{% block title %}Hosts — Linux Monitor{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Manage monitored hosts</h1>
+</header>
+
+<section class="card">
+  <h2>Add a new host</h2>
+  <p class="muted">
+    You can also add a host automatically by running the agent on the target
+    Linux machine — it will self-register and appear here. Manual addition
+    generates an API key that you must paste into <code>agent_config.json</code>.
+  </p>
+  <form method="post" class="form-row">
+    <input type="hidden" name="action" value="add">
+    <input type="text" name="hostname" placeholder="hostname (e.g. web01.local)" required>
+    <input type="text" name="description" placeholder="description (optional)">
+    <button type="submit">Add</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Registered hosts</h2>
+  {% if hosts %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Status</th><th>Hostname</th><th>Description</th>
+        <th>Interval (s)</th><th>Active</th>
+        <th>Last seen (UTC)</th><th>API key</th><th></th>
+      </tr>
+    </thead>
+    <tbody>
+    {% for h in hosts %}
+      <tr>
+        <td>
+          <span class="status-dot {{ 'on' if h.online else 'off' }}"></span>
+          {{ 'ON' if h.online else 'OFF' }}
+        </td>
+        <td><a href="{{ url_for('host_detail', host_id=h.id) }}">{{ h.hostname }}</a></td>
+        <td>
+          <form method="post" class="inline-form">
+            <input type="hidden" name="action" value="update">
+            <input type="hidden" name="host_id" value="{{ h.id }}">
+            <input type="text" name="description" value="{{ h.description }}">
+        </td>
+        <td>
+            <input type="number" name="polling_interval" value="{{ h.polling_interval }}" min="1" max="3600" style="width: 80px;">
+        </td>
+        <td>
+            <input type="checkbox" name="active" {% if h.active %}checked{% endif %}>
+        </td>
+        <td class="small muted">{{ h.last_seen or '—' }}</td>
+        <td class="api-key" title="{{ h.api_key }}">{{ h.api_key[:10] }}…</td>
+        <td>
+            <button type="submit">Save</button>
+          </form>
+          <form method="post" class="inline-form"
+                onsubmit="return confirm('Delete {{ h.hostname }} and all its data?');">
+            <input type="hidden" name="action" value="delete">
+            <input type="hidden" name="host_id" value="{{ h.id }}">
+            <button type="submit" class="danger">Delete</button>
+          </form>
+        </td>
+      </tr>
+    {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No hosts registered yet.</p>
+  {% endif %}
+</section>
+{% endblock %}

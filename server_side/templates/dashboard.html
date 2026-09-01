@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}Overview — Linux Monitor{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Monitored hosts</h1>
+  <p class="muted">{{ hosts|length }} host(s) registered.</p>
+</header>
+
+{% if alerts %}
+<section class="alerts-banner">
+  <h2>Active alerts ({{ alerts|length }})</h2>
+  <ul>
+    {% for a in alerts %}
+      <li class="alert-row alert-{{ a.level }}">
+        <span class="alert-level">{{ a.level|upper }}</span>
+        <span class="alert-host">{{ a.hostname }}</span>
+        <span class="alert-msg">{{ a.message }}</span>
+        <span class="alert-time muted">{{ a.ts }}</span>
+      </li>
+    {% endfor %}
+  </ul>
+  <a class="btn-small" href="{{ url_for('alerts_page') }}">All alerts →</a>
+</section>
+{% endif %}
+
+{% if hosts %}
+<section class="host-grid">
+  {% for h in hosts %}
+  {% set m = h.latest %}
+  <a class="host-card" href="{{ url_for('host_detail', host_id=h.id) }}">
+    <div class="host-card-head">
+      <span class="status-dot {{ 'on' if h.online else 'off' }}"></span>
+      <h3>{{ h.hostname }}</h3>
+    </div>
+    {% if m %}
+    <div class="metrics-row">
+      <div class="metric">
+        <div class="metric-label">CPU</div>
+        <div class="bar"><div class="bar-fill" style="width: {{ m.cpu }}%"></div></div>
+        <div class="metric-value">{{ "%.1f"|format(m.cpu) }}%</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">RAM</div>
+        <div class="bar"><div class="bar-fill" style="width: {{ m.ram }}%"></div></div>
+        <div class="metric-value">{{ "%.1f"|format(m.ram) }}%</div>
+      </div>
+      <div class="metric">
+        <div class="metric-label">Disk</div>
+        <div class="bar"><div class="bar-fill" style="width: {{ m.disk }}%"></div></div>
+        <div class="metric-value">{{ "%.1f"|format(m.disk) }}%</div>
+      </div>
+    </div>
+    <div class="meta-row">
+      <span title="Processes">⚙ {{ m.processes }}</span>
+      <span title="Network in (KB/s)">↓ {{ "%.1f"|format(m.net_recv) }}</span>
+      <span title="Network out (KB/s)">↑ {{ "%.1f"|format(m.net_sent) }}</span>
+      <span title="Uptime">⏱ {{ m.uptime|uptime }}</span>
+    </div>
+    <div class="muted small">Last seen: {{ h.last_seen or '—' }} UTC</div>
+    {% else %}
+    <p class="muted">No data yet. Check that the agent is running.</p>
+    {% endif %}
+  </a>
+  {% endfor %}
+</section>
+{% else %}
+<section class="empty">
+  <h2>No hosts registered</h2>
+  <p>Start an agent on a Linux machine or add a host manually.</p>
+  <a class="btn" href="{{ url_for('hosts_manage') }}">Add host</a>
+</section>
+{% endif %}
+
+<script>
+  // Simple browser auto-refresh every 10s (no SPA framework needed)
+  setTimeout(() => location.reload(), 10000);
+</script>
+{% endblock %}

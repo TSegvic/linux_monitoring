@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}{{ host.hostname }} — Linux Monitor{% endblock %}
+
+{% block head_extra %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <a href="{{ url_for('dashboard') }}" class="back-link">← Overview</a>
+  <h1>{{ host.hostname }}</h1>
+  <p class="muted">
+    {% if host.description %}{{ host.description }} · {% endif %}
+    Registered: {{ host.registered_at }} UTC · Interval: {{ host.polling_interval }}s
+  </p>
+
+  <div class="range-tabs">
+    {% for r in ['1h', '6h', '24h', '7d'] %}
+      <a class="{{ 'active' if r == range }}"
+         href="{{ url_for('host_detail', host_id=host.id, range=r) }}">{{ r }}</a>
+    {% endfor %}
+    <a href="{{ url_for('host_processes', host_id=host.id) }}" style="margin-left: 16px;">Processes &amp; commands →</a>
+  </div>
+</header>
+
+<section class="current-values" id="current">
+  <div class="big-metric"><div class="big-label">CPU</div><div class="big-value" id="cur-cpu">—</div></div>
+  <div class="big-metric"><div class="big-label">RAM</div><div class="big-value" id="cur-ram">—</div></div>
+  <div class="big-metric"><div class="big-label">Disk</div><div class="big-value" id="cur-disk">—</div></div>
+  <div class="big-metric"><div class="big-label">Processes</div><div class="big-value" id="cur-proc">—</div></div>
+  <div class="big-metric"><div class="big-label">Net ↓ KB/s</div><div class="big-value" id="cur-recv">—</div></div>
+  <div class="big-metric"><div class="big-label">Net ↑ KB/s</div><div class="big-value" id="cur-sent">—</div></div>
+  <div class="big-metric"><div class="big-label">Uptime</div><div class="big-value" id="cur-uptime">—</div></div>
+</section>
+
+<section class="chart-grid">
+  <div class="chart-card">
+    <h3>Usage (CPU / RAM / Disk) %</h3>
+    <canvas id="chart-percent"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Network traffic (KB/s)</h3>
+    <canvas id="chart-net"></canvas>
+  </div>
+  <div class="chart-card">
+    <h3>Active process count</h3>
+    <canvas id="chart-proc"></canvas>
+  </div>
+</section>
+
+<script>
+const HOST_ID = {{ host.id }};
+const RANGE   = "{{ range }}";
+
+function fmtUptime(seconds) {
+  seconds = Math.floor(seconds || 0);
+  const d = Math.floor(seconds / 86400);
+  const h = Math.floor((seconds % 86400) / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (d) return `${d}d ${h}h ${m}min`;
+  if (h) return `${h}h ${m}min`;
+  return `${m}min`;
+}
+
+function timeLabel(iso) {
+  const d = new Date(iso + "Z");  // ts is UTC ISO
+  return d.toLocaleTimeString();
+}
+
+const baseOpts = {
+  responsive: true,
+  maintainAspectRatio: false,
+  animation: { duration: 0 },
+  plugins: { legend: { labels: { color: "#cfd6e4" } } },
+  scales: {
+    x: { ticks: { color: "#8a93a6", maxTicksLimit: 8 }, grid: { color: "#1f2530" } },
+    y: { ticks: { color: "#8a93a6" }, grid: { color: "#1f2530" } }
+  }
+};
+
+const pctChart = new Chart(document.getElementById("chart-percent"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "CPU %",  data: [], borderColor: "#5aa1ff", backgroundColor: "rgba(90,161,255,.15)", tension: .25, fill: true },
+    { label: "RAM %",  data: [], borderColor: "#7ed957", backgroundColor: "rgba(126,217,87,.15)", tension: .25, fill: true },
+    { label: "Disk %", data: [], borderColor: "#f4a261", backgroundColor: "rgba(244,162,97,.15)", tension: .25, fill: true },
+  ]},
+  options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0, max: 100 } } }
+});
+
+const netChart = new Chart(document.getElementById("chart-net"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "↓ Download", data: [], borderColor: "#5aa1ff", backgroundColor: "rgba(90,161,255,.15)", tension: .25, fill: true },
+    { label: "↑ Upload",   data: [], borderColor: "#e76f51", backgroundColor: "rgba(231,111,81,.15)", tension: .25, fill: true },
+  ]},
+  options: baseOpts
+});
+
+const procChart = new Chart(document.getElementById("chart-proc"), {
+  type: "line",
+  data: { labels: [], datasets: [
+    { label: "Processes", data: [], borderColor: "#bb86fc", backgroundColor: "rgba(187,134,252,.15)", tension: .25, fill: true },
+  ]},
+  options: baseOpts
+});
+
+async function refresh() {
+  try {
+    const resp = await fetch(`/api/hosts/${HOST_ID}/metrics?range=${RANGE}`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    const labels = data.map(d => timeLabel(d.ts));
+
+    pctChart.data.labels = labels;
+    pctChart.data.datasets[0].data = data.map(d => d.cpu);
+    pctChart.data.datasets[1].data = data.map(d => d.ram);
+    pctChart.data.datasets[2].data = data.map(d => d.disk);
+    pctChart.update("none");
+
+    netChart.data.labels = labels;
+    netChart.data.datasets[0].data = data.map(d => d.net_recv);
+    netChart.data.datasets[1].data = data.map(d => d.net_sent);
+    netChart.update("none");
+
+    procChart.data.labels = labels;
+    procChart.data.datasets[0].data = data.map(d => d.processes);
+    procChart.update("none");
+
+    if (data.length) {
+      const last = data[data.length - 1];
+      document.getElementById("cur-cpu").textContent    = last.cpu.toFixed(1) + " %";
+      document.getElementById("cur-ram").textContent    = last.ram.toFixed(1) + " %";
+      document.getElementById("cur-disk").textContent   = last.disk.toFixed(1) + " %";
+      document.getElementById("cur-proc").textContent   = last.processes;
+      document.getElementById("cur-recv").textContent   = last.net_recv.toFixed(1);
+      document.getElementById("cur-sent").textContent   = last.net_sent.toFixed(1);
+      document.getElementById("cur-uptime").textContent = fmtUptime(last.uptime);
+    }
+  } catch (e) {
+    console.error("refresh failed", e);
+  }
+}
+
+refresh();
+setInterval(refresh, 5000);
+</script>
+{% endblock %}

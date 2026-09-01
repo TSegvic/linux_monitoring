@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Alerts — Linux Monitor{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Alerts</h1>
+  <div class="range-tabs">
+    <a class="{{ '' if only_unresolved else 'active' }}"
+       href="{{ url_for('alerts_page') }}">All</a>
+    <a class="{{ 'active' if only_unresolved else '' }}"
+       href="{{ url_for('alerts_page', only_unresolved='true') }}">Active only</a>
+  </div>
+</header>
+
+{% if alerts %}
+<table class="data-table">
+  <thead>
+    <tr>
+      <th>Time (UTC)</th><th>Host</th><th>Metric</th>
+      <th>Level</th><th>Message</th><th>State</th><th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for a in alerts %}
+    <tr class="alert-{{ a.level }}">
+      <td class="small">{{ a.ts }}</td>
+      <td>{{ a.hostname }}</td>
+      <td>{{ a.metric }}</td>
+      <td><span class="badge badge-{{ a.level }}">{{ a.level|upper }}</span></td>
+      <td>{{ a.message }}</td>
+      <td>{{ 'resolved' if a.resolved else 'active' }}</td>
+      <td>
+        {% if not a.resolved %}
+        <form method="post" action="{{ url_for('resolve', alert_id=a.id) }}" class="inline-form">
+          <button type="submit">Mark resolved</button>
+        </form>
+        {% endif %}
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">No alerts.</p>
+{% endif %}
+{% endblock %}

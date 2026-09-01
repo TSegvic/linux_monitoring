@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>{% block title %}Linux Monitoring{% endblock %}</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+{% block head_extra %}{% endblock %}
+</head>
+<body>
+{% if session.user_id %}
+<div class="layout">
+  <aside class="sidebar">
+    <div class="brand">
+      <span class="brand-dot"></span>
+      <span>Linux Monitor</span>
+    </div>
+    <nav>
+      <a href="{{ url_for('dashboard') }}"      class="{{ 'active' if request.endpoint == 'dashboard' }}">Overview</a>
+      <a href="{{ url_for('hosts_manage') }}"   class="{{ 'active' if request.endpoint == 'hosts_manage' }}">Hosts</a>
+      <a href="{{ url_for('alerts_page') }}"    class="{{ 'active' if request.endpoint == 'alerts_page' }}">Alerts</a>
+      <a href="{{ url_for('settings') }}"       class="{{ 'active' if request.endpoint == 'settings' }}">Settings</a>
+    </nav>
+    <div class="sidebar-bottom">
+      <div class="user-info">{{ session.username }}</div>
+      <a class="logout" href="{{ url_for('logout') }}">Sign out</a>
+    </div>
+  </aside>
+  <main class="main">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
+</div>
+{% else %}
+  {% block fullscreen %}{% endblock %}
+{% endif %}
+</body>
+</html>

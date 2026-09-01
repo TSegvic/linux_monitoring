@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Linux Monitor{% endblock %}
+
+{% block fullscreen %}
+<div class="login-wrap">
+  <form class="login-box" method="post">
+    <h1>Linux Monitor</h1>
+    <p class="subtitle">Remote Monitoring System for Linux Servers</p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, msg in messages %}
+        <div class="flash flash-{{ category }}">{{ msg }}</div>
+      {% endfor %}
+    {% endwith %}
+
+    <label>Username</label>
+    <input type="text" name="username" autofocus required>
+
+    <label>Password</label>
+    <input type="password" name="password" required>
+
+    <button type="submit">Sign in</button>
+    <p class="hint">Default account: <code>admin / admin</code></p>
+  </form>
+</div>
+{% endblock %}

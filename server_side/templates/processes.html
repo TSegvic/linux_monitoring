@@ -1,0 +1,179 @@
+{% extends "base.html" %}
+{% block title %}Processes — {{ host.hostname }}{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <a href="{{ url_for('host_detail', host_id=host.id) }}" class="back-link">← {{ host.hostname }}</a>
+  <h1>Processes &amp; commands on {{ host.hostname }}</h1>
+  <p class="muted">
+    Commands are executed on the target Linux machine by the agent.
+    The agent picks them up on its next polling cycle (~{{ host.polling_interval }}s),
+    runs them, and reports the result back. Every action is logged.
+  </p>
+</header>
+
+<!-- =========== PROCESSES =========== -->
+<section class="card">
+  <div class="card-header-row">
+    <h2>Running processes</h2>
+    <div>
+      <span class="muted small">
+        {% if last_refresh %}
+          Last fetched: {{ last_refresh }} UTC
+        {% else %}
+          No process list fetched yet.
+        {% endif %}
+      </span>
+      <form method="post" class="inline-form" style="display:inline-block; margin-left: 12px;">
+        <input type="hidden" name="action" value="refresh">
+        <button type="submit">Refresh list</button>
+      </form>
+    </div>
+  </div>
+
+  {% if processes %}
+  <form method="get" class="form-row" style="margin-bottom: 12px;">
+    <input type="text" name="q" value="{{ q }}" placeholder="filter (pid, name, user, cmdline)">
+    <button type="submit">Filter</button>
+    {% if q %}<a href="{{ url_for('host_processes', host_id=host.id) }}">Clear</a>{% endif %}
+  </form>
+
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>PID</th><th>User</th><th>Name</th>
+        <th>CPU %</th><th>RAM %</th><th>Cmdline</th><th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in processes %}
+      <tr>
+        <td>{{ p.pid }}</td>
+        <td class="small">{{ p.user or '?' }}</td>
+        <td><strong>{{ p.name }}</strong></td>
+        <td>{{ "%.1f"|format(p.cpu or 0) }}</td>
+        <td>{{ "%.1f"|format(p.mem or 0) }}</td>
+        <td class="cmdline small">{{ p.cmdline or '' }}</td>
+        <td>
+          <form method="post" class="inline-form"
+                onsubmit="return confirm('Send SIGTERM to PID={{ p.pid }} ({{ p.name }})?');">
+            <input type="hidden" name="action" value="kill">
+            <input type="hidden" name="pid" value="{{ p.pid }}">
+            <input type="hidden" name="signal" value="TERM">
+            <button type="submit">TERM</button>
+          </form>
+          <form method="post" class="inline-form"
+                onsubmit="return confirm('WARNING: SIGKILL is non-graceful. Continue for PID={{ p.pid }}?');">
+            <input type="hidden" name="action" value="kill">
+            <input type="hidden" name="pid" value="{{ p.pid }}">
+            <input type="hidden" name="signal" value="KILL">
+            <button type="submit" class="danger">KILL</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">
+    No process list available. Click <strong>Refresh list</strong> so the agent
+    fetches the current processes on its next cycle.
+  </p>
+  {% endif %}
+</section>
+
+<!-- =========== RUN COMMAND =========== -->
+<section class="card">
+  <h2>Run a command on the target host</h2>
+  <p class="muted small">
+    The command is executed via <code>bash -c</code> with the privileges of
+    the user running the agent. stdout and stderr are returned in the
+    command result (see history below).
+  </p>
+  <form method="post">
+    <input type="hidden" name="action" value="exec">
+    <label class="muted small">Command</label>
+    <textarea name="cmd" rows="3" required
+              placeholder="e.g. systemctl restart nginx     or     uname -a"
+              style="width: 100%; background: var(--bg-2); border: 1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-family: ui-monospace, monospace;"></textarea>
+    <div class="form-row" style="margin-top: 10px;">
+      <label class="muted small">Timeout (s):</label>
+      <input type="number" name="timeout" value="30" min="1" max="600" style="width: 80px;">
+      <button type="submit">Run</button>
+    </div>
+  </form>
+</section>
+
+<!-- =========== HISTORY =========== -->
+<section class="card">
+  <h2>Command history</h2>
+  {% if history %}
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th>Time (UTC)</th><th>Type</th><th>Details</th>
+        <th>Status</th><th>Exit</th><th>Result / Error</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for c in history %}
+      <tr>
+        <td class="small">{{ c.created_at }}</td>
+        <td><strong>{{ c.type }}</strong></td>
+        <td class="small cmdline">
+          {% if c.type == 'exec' %}{{ c.payload.cmd }}
+          {% elif c.type == 'kill_process' %}PID {{ c.payload.pid }} ({{ c.payload.signal }})
+          {% else %}—{% endif %}
+        </td>
+        <td>
+          <span class="badge badge-{{ {'done':'ok','failed':'critical','pending':'warning','executing':'warning'}[c.status] }}">{{ c.status }}</span>
+        </td>
+        <td>{{ c.exit_code if c.exit_code is not none else '—' }}</td>
+        <td class="small">
+          {% if c.error %}
+            <span style="color: var(--critical);">{{ c.error }}</span>
+          {% elif c.result %}
+            {% if c.type == 'exec' %}
+              {% set out = (c.result.stdout or '') %}
+              {% set err = (c.result.stderr or '') %}
+              {% if out %}<pre class="cmd-out">{{ out[:1000] }}{% if out|length > 1000 %}…{% endif %}</pre>{% endif %}
+              {% if err %}<pre class="cmd-err">{{ err[:1000] }}{% if err|length > 1000 %}…{% endif %}</pre>{% endif %}
+              {% if not out and not err %}<span class="muted">(no output)</span>{% endif %}
+            {% elif c.type == 'list_processes' %}
+              {{ c.result.processes|length if c.result.processes else 0 }} processes
+            {% elif c.type == 'kill_process' %}
+              {% if c.result.killed %}OK ({{ c.result.message or 'terminated' }})
+              {% else %}{{ c.result.message or '—' }}{% endif %}
+            {% endif %}
+          {% else %}
+            <span class="muted">—</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p class="muted">No commands executed yet.</p>
+  {% endif %}
+</section>
+
+<style>
+  .card-header-row { display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+  .card-header-row h2 { margin: 0; }
+  .cmdline { font-family: ui-monospace, "SF Mono", Consolas, monospace; color: var(--text-muted); max-width: 380px;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  pre.cmd-out, pre.cmd-err { margin: 0; padding: 6px 8px; background: var(--bg-0);
+                              border-radius: 4px; font-size: 11px; max-height: 120px; overflow: auto;
+                              white-space: pre-wrap; word-break: break-all; }
+  pre.cmd-err { border-left: 2px solid var(--critical); }
+  .badge-ok { background: rgba(126,217,87,.2); color: var(--ok); }
+</style>
+
+<script>
+  // Auto-refresh every few seconds if any command is still pending or executing
+  {% if history and history|selectattr('status', 'in', ['pending', 'executing'])|list|length > 0 %}
+    setTimeout(() => location.reload(), 3000);
+  {% endif %}
+</script>
+{% endblock %}

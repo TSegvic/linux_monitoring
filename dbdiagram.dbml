@@ -1,0 +1,110 @@
+// =============================================================
+// Linux Remote Monitoring System - Database Schema
+// Project: Remote Monitoring System for Linux Servers
+// Storage:  SQLite
+// Paste this into https://dbdiagram.io/d to render the ER diagram.
+// =============================================================
+
+Table users {
+  id            integer  [pk, increment]
+  username      varchar  [not null, unique]
+  password_hash varchar  [not null, note: 'PBKDF2-SHA256, stored as "salt$hash"']
+  created_at    varchar  [not null, note: 'ISO-8601 UTC timestamp']
+
+  Note: 'Web UI administrators'
+}
+
+Table hosts {
+  id               integer  [pk, increment]
+  hostname         varchar  [not null, unique]
+  api_key          varchar  [not null, unique, note: 'token sent by agent via X-API-Key header']
+  registered_at    varchar  [not null, note: 'ISO-8601 UTC timestamp']
+  last_seen        varchar  [note: 'time of the most recent metric submission']
+  polling_interval integer  [not null, default: 5, note: 'seconds between agent polls']
+  active           integer  [not null, default: 1, note: '0 = disabled; server rejects metrics']
+  description      varchar  [default: '']
+
+  Note: 'Monitored Linux machines'
+}
+
+Table metrics {
+  id        integer  [pk, increment]
+  host_id   integer  [not null]
+  ts        varchar  [not null, note: 'ISO-8601 UTC timestamp']
+  cpu       real     [not null, note: 'percent 0..100']
+  ram       real     [not null, note: 'percent 0..100']
+  disk      real     [not null, note: 'percent 0..100, root partition']
+  net_sent  real     [not null, default: 0, note: 'KB/s during the interval']
+  net_recv  real     [not null, default: 0, note: 'KB/s during the interval']
+  processes integer  [not null, default: 0]
+  uptime    integer  [not null, default: 0, note: 'seconds since boot']
+
+  Indexes {
+    (host_id, ts) [name: 'idx_metrics_host_ts']
+  }
+
+  Note: 'Time-series metrics submitted by agents'
+}
+
+Table thresholds {
+  id       integer  [pk, increment]
+  host_id  integer  [note: 'NULL = global threshold applied to every host']
+  metric   varchar  [not null, note: 'cpu | ram | disk']
+  warning  real     [not null]
+  critical real     [not null]
+
+  Indexes {
+    metric            [unique, name: 'idx_thr_global', note: 'partial: WHERE host_id IS NULL']
+    (host_id, metric) [unique, name: 'idx_thr_host',   note: 'partial: WHERE host_id IS NOT NULL']
+  }
+
+  Note: 'Alert thresholds. A per-host row overrides the global row for the same metric.'
+}
+
+Table alerts {
+  id        integer  [pk, increment]
+  host_id   integer  [not null]
+  ts        varchar  [not null]
+  metric    varchar  [not null, note: 'cpu | ram | disk | offline']
+  level     varchar  [not null, note: 'warning | critical']
+  value     real     [note: 'observed metric value']
+  threshold real     [note: 'threshold the value crossed']
+  message   varchar  [not null]
+  resolved  integer  [not null, default: 0]
+
+  Indexes {
+    (host_id, ts) [name: 'idx_alerts_host_ts']
+  }
+
+  Note: 'Generated alerts (deduplicated within a 5-minute window)'
+}
+
+Table commands {
+  id          integer  [pk, increment]
+  host_id     integer  [not null]
+  type        varchar  [not null, note: 'list_processes | kill_process | exec']
+  payload     varchar  [not null, note: 'JSON-encoded request parameters']
+  status      varchar  [not null, default: 'pending', note: 'pending | executing | done | failed']
+  created_at  varchar  [not null]
+  executed_at varchar
+  exit_code   integer
+  result      varchar  [note: 'JSON-encoded result returned by the agent']
+  error       varchar
+  issued_by   varchar  [note: 'username that queued the command from the web UI']
+
+  Indexes {
+    (host_id, status)     [name: 'idx_cmd_host_status']
+    (host_id, created_at) [name: 'idx_cmd_host_created']
+  }
+
+  Note: 'Remote command queue: web UI inserts, agent pulls and reports back.'
+}
+
+// =============================================================
+// Foreign keys (all cascade on host delete)
+// =============================================================
+
+Ref: metrics.host_id    > hosts.id [delete: cascade]
+Ref: alerts.host_id     > hosts.id [delete: cascade]
+Ref: thresholds.host_id > hosts.id [delete: cascade]
+Ref: commands.host_id   > hosts.id [delete: cascade]

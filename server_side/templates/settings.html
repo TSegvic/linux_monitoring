@@ -1,0 +1,49 @@
+{% extends "base.html" %}
+{% block title %}Settings — Linux Monitor{% endblock %}
+
+{% block content %}
+<header class="page-head">
+  <h1>Alert threshold settings</h1>
+  <p class="muted">
+    Global limits apply to every host. When a metric crosses the
+    <em>warning</em> threshold a warning alert is created; when it crosses
+    the <em>critical</em> threshold a critical alert is created.
+  </p>
+</header>
+
+<section class="card">
+  <form method="post">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Metric</th>
+          <th>Warning (%)</th>
+          <th>Critical (%)</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for metric in ['cpu', 'ram', 'disk'] %}
+        {% set t = thresholds.get(metric, {'warning': 80, 'critical': 95}) %}
+        <tr>
+          <td><strong>{{ metric|upper }}</strong></td>
+          <td><input type="number" step="0.1" min="0" max="100"
+                     name="{{ metric }}_warning" value="{{ t.warning }}"></td>
+          <td><input type="number" step="0.1" min="0" max="100"
+                     name="{{ metric }}_critical" value="{{ t.critical }}"></td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <button type="submit">Save</button>
+  </form>
+</section>
+
+<section class="card">
+  <h2>Offline host detection</h2>
+  <p class="muted">
+    A host is considered <em>offline</em> if it has not sent data in the last
+    3 × polling-interval seconds (minimum 30 s). The check runs automatically
+    in a background thread every 30 seconds.
+  </p>
+</section>
+{% endblock %}
